@@ -81,10 +81,10 @@ def lex(code):
         
         if chars_left >= 1:
             # print("in")
-            if code[i:i+1] in {"+", "-", "*", "/", "(", ")", "=", ".", ","}:
+            if code[i:i+1] in {"+", "-", "*", "/", "(", ")", "=", "<", ">", ".", ","}:
                 # print("in2", code[i:i+1])
                 toks.append(Operator(value=code[i:i+1], line=line, char=char))
-                print(toks)
+                # print(toks)
                 i += 1
                 char += i - li
                 li = i

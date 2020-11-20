@@ -270,6 +270,12 @@ def ruby_compile_as_statement(ast):
             ruby_compile_as_rvalue(ast.children[0]),
             ruby_aspython(ast.children[1]).replace("\n", "\n  ")
         )
+
+    elif isinstance(ast, rast.While):
+        return "while %s:\n  %s" % (
+            ruby_compile_as_rvalue(ast.children[0]),
+            ruby_aspython(ast.children[1]).replace("\n", "\n  ")
+        )
     
     else:
         raise NotImplementedError(type(ast).__name__)
@@ -417,26 +423,45 @@ ast = rast.Block(children=[
 ])
 """
 
-##code = r"""
-##print 'What\'s your name? '
-##$stdout.flush
-##name = gets
-##
-##if name == 'gwitr' then
-##    puts 'Nice to meet you'
-##end
-##
-##if name != 'gwitr' then
-##    puts 'Ok'
-##else
-##    puts 'test'
-##end
-##"""
-
 code = r"""
-puts 1,2,
-0
+print 'Proper math order:', 1 + 2 - 3 * 4 * 5 + 6 - 7, '=', '-58'
+
+x = 0
+while x < 10 do
+    puts x
+    x = x + 1
+end
+print 'What\'s your name? '
+$stdout.flush
+name = gets
+
+if name == 'gwitr' then
+    puts 'nested'
+    if name == 'gwitr' then
+        puts 'if'
+        if name == 'gwitr' then
+            puts 'stmt'
+            if name == 'gwitr' then
+                puts 'test!'
+            end
+        end
+    end
+end
+
+if name != 'gwitr' then
+    puts 'it\'s not gwitr'
+else
+    puts 'it is gwitr'
+end
 """
+
+
+
+
+
+
+
+
 
 toks = rlex.lex(code)
 ast = rast.parse(toks)

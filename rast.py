@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import rlex
+import traceback
 import dataclasses
 from typing import *
 from dataclasses import dataclass
@@ -75,6 +76,13 @@ class If(Node):
     # 1st child: The condition
     # 2nd child: "then ... end/else" block
     # 3rd child (optional): "else ... end" block
+    token: None = None
+    children: List[rast.Node]
+
+@dataclass(init=False)
+class While(Node):
+    # 1st child: The condition
+    # 2nd child: "do ... end" block
     token: None = None
     children: List[rast.Node]
 
@@ -165,7 +173,21 @@ def expr2ast(toks, ignore_sy_operator=False):
                 except ElseSignal:
                     raise ValueError("If block cannot have more than one else block") from None
             return If(children=[cond, block])
-            
+
+        elif tok.value == "while":
+            cond = expr2ast(toks)
+            # print(toks[0])
+            if (not isinstance(toks[0], rlex.Keyword)) or (not toks[0].value == "do"):
+                raise ValueError("Expected Keyword then, got %s %s" % (
+                    type(toks[0]).__name__, toks[0].value
+                ))
+            toks.pop(0)
+            try:
+                block = _tok2ast(toks)
+            except ElseSignal as e:
+                raise ValueError("While block cannot have an else block") from None
+            return While(children=[cond, block])
+        
         else:
             raise NotImplementedError("Keyword %s" % tok.value)
 
@@ -212,7 +234,13 @@ def expr2ast(toks, ignore_sy_operator=False):
                     return shunting_yard(toks)
             
         return Literal(token=tok)
-    
+
+    elif isinstance(tok, rlex.Operator) and tok.value == ")":
+        return None
+
+    elif isinstance(tok, rlex.Operator) and tok.value == "(":
+        return expr2ast(toks)
+     
     raise NotImplementedError(type(tok).__name__)
 
 SY_PRECEDENCE = {
@@ -246,6 +274,10 @@ def shunting_yard(toks):
             raise Break
         
         if isinstance(toks[0], rlex.Operator):
+            if toks[0].value == ")":
+                toks.pop(0)
+                return vnext()
+            
             if toks[0].value == ",":
                 raise Break
             return toks.pop(0).value
@@ -335,9 +367,9 @@ def exprseq2astseq(toks):
             break
         # print("a", r, toks[0])
 
-        print("b", toks)
+        # print("b", toks)
         e = expr2ast(toks)
-        print("c", toks)
+        # print("c", toks)
         if e is not None:
             r.append(e)
     return r
@@ -345,34 +377,13 @@ def exprseq2astseq(toks):
 if __name__ == "__main__":
     # puts 1 + 2 - 3 * 4 * 5 + 6 - 7, 8 - 9 + 10 * 11 * 12 - 13 + 17
     toks = [
+        rlex.Keyword(value="while", line=-1, char=-1),
+        rlex.Literal(value=1, line=-1, char=-1),
+        rlex.Keyword(value="do", line=-1, char=-1),
+        rlex.Separator(line=-1, char=-1),
         rlex.Name(value="puts", line=-1, char=-1),
-        rlex.Literal(value=1, line=-1, char=-1),
-        rlex.Operator(value="+", line=-1, char=-1),
-        rlex.Literal(value=2, line=-1, char=-1),
-        rlex.Operator(value="-", line=-1, char=-1),
-        rlex.Literal(value=3, line=-1, char=-1),
-        rlex.Operator(value="*", line=-1, char=-1),
-        rlex.Literal(value=1, line=-1, char=-1),
-        rlex.Operator(value="*", line=-1, char=-1),
-        rlex.Literal(value=1, line=-1, char=-1),
-        rlex.Operator(value="+", line=-1, char=-1),
-        rlex.Literal(value=1, line=-1, char=-1),
-        rlex.Operator(value="-", line=-1, char=-1),
-        rlex.Literal(value=1, line=-1, char=-1),
-        rlex.Operator(value=",", line=-1, char=-1),
-        rlex.Literal(value=8, line=-1, char=-1),
-        rlex.Operator(value="-", line=-1, char=-1),
-        rlex.Literal(value=9, line=-1, char=-1),
-        rlex.Operator(value="+", line=-1, char=-1),
-        rlex.Literal(value=10, line=-1, char=-1),
-        rlex.Operator(value="*", line=-1, char=-1),
-        rlex.Literal(value=11, line=-1, char=-1),
-        rlex.Operator(value="*", line=-1, char=-1),
-        rlex.Literal(value=12, line=-1, char=-1),
-        rlex.Operator(value="-", line=-1, char=-1),
-        rlex.Literal(value=13, line=-1, char=-1),
-        rlex.Operator(value="+", line=-1, char=-1),
-        rlex.Literal(value=14, line=-1, char=-1)
+        rlex.Literal(value="bruh", line=-1, char=-1),
+        rlex.Keyword(value="end", line=-1, char=-1)
     ]
     
     ast = parse(toks)
