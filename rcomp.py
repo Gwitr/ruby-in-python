@@ -356,6 +356,17 @@ def ruby_exec(code, *, constants=None, rglobals=None, rlocals_init=None):
     exec(code, eglobals, locals)
     return eglobals, locals
 
+code = r"""
+def bruh(a, b, c)
+  a + (b + c)
+end
+
+x = 10
+y = 20
+STDOUT.puts bruh 5, 10, 200
+STDOUT.puts x + y
+"""
+
 """
 ast = rast.Block(children=[
     rast.NameSequence(children=[]),
@@ -424,7 +435,7 @@ ast = rast.Block(children=[
 """
 
 code = r"""
-print 'Proper math order:', 1 + 2 - 3 * 4 * 5 + 6 - 7, '=', '-58'
+puts 'Proper math order:', 1 + 2 - 3 * 4 * 5 + 6 - 7, '=', '-58'
 
 x = 0
 while x < 10 do

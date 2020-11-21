@@ -14,44 +14,51 @@ def dataclass__init__(self, *args, **kwargs):
             v = vf()
         setattr(self, k, v)
 
-@dataclass(init=False)
+def dataclass__repr__(self):
+    args = ", ".join("%s=%r" % (k, getattr(self, k)) for k in self.__dataclass_fields__ if k not in self.REPR_IGNORE and getattr(self, k) is not None)
+    return "%s(%s)" % (self.__class__.__name__, args)
+
+@dataclass(init=False, repr=False)
 class Token():
 
     __init__ = dataclass__init__
+    __repr__ = dataclass__repr__
+
+    REPR_IGNORE = ["line", "char"]
     
     value: Any
     line: int
     char: int
 
-@dataclass(init=False)
+@dataclass(init=False, repr=False)
 class Separator(Token):
     value: None = None
 
-@dataclass(init=False)
+@dataclass(init=False, repr=False)
 class Literal(Token):
     value: Union[int, str]
 
-@dataclass(init=False)
+@dataclass(init=False, repr=False)
 class Symbol(Token):
     value: str
 
-@dataclass(init=False)
+@dataclass(init=False, repr=False)
 class Operator(Token):
     value: str
 
-@dataclass(init=False)
+@dataclass(init=False, repr=False)
 class Name(Token):
     value: str
 
-@dataclass(init=False)
+@dataclass(init=False, repr=False)
 class GlobalName(Token):
     value: str
 
-@dataclass(init=False)
+@dataclass(init=False, repr=False)
 class Keyword(Token):
     value: str
 
-IDENT_START_A = "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM_"
+IDENT_START_A = "QWERTYUIOPASDFGHJKLZXCVBNMqwertyuiopasdfghjklzxcvbnm_"
 IDENT_A = "qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM_0123456789"
 WHITESPACE_A = " \t\r"
 
@@ -69,7 +76,7 @@ def lex(code):
             i += 1
             continue
         
-        chars_left = len(code) - i - 1
+        chars_left = len(code) - i
         # print(repr(code[i]), chars_left)
         if chars_left >= 2:
             if code[i:i+2] in {"==", "!=", "**"}:
@@ -97,7 +104,7 @@ def lex(code):
                 x += code[i]
                 i += 1
             
-            if x in {"if", "then", "else", "end", "while", "do"}:
+            if x in {"if", "then", "else", "end", "while", "do", "def"}:
                 toks.append(Keyword(value=x, line=line, char=char))
             else:
                 toks.append(Name(value=x, line=line, char=char))

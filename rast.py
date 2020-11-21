@@ -6,6 +6,8 @@ import dataclasses
 from typing import *
 from dataclasses import dataclass
 
+AST_DEBUG = False
+
 def dataclass__init__(self, *args, **kwargs):
     for k in self.__dataclass_fields__:
         v = kwargs.get(k, self.__dataclass_fields__[k].default)
@@ -95,6 +97,43 @@ class Define(Node):
 
 # Pain
 
+if AST_DEBUG:
+    def dbg(f):
+        def wrap(*args, **kwargs):
+            nonlocal f
+            if len(kwargs) > 0:
+                print(
+                    "ENTER %s(%s, %s)" % (f.__name__, ", ".join(repr(i) for i in args), ", ".join("%s=%r"%(i,kwargs[i]) for i in kwargs)),
+                )
+            else:
+                print(
+                    "ENTER %s(%s)" % (f.__name__, ", ".join(repr(i) for i in args)),
+                )
+            dbg.counter += 1
+            r = f(*args, **kwargs)
+            dbg.counter -= 1
+            return r
+        return wrap
+    dbg.counter = 0
+
+    def dbg_print(*args, sep=" ", end="\n"):
+        if dbg_print.last_end == "\n":
+            try:
+                __builtins__["print"](dbg.counter * "  ", end="")
+            except TypeError:
+                __builtins__.print(dbg.counter * "  ", end="")
+        dbg_print.last_end = end
+        try:
+            __builtins__["print"](*args, sep=sep, end=end)
+        except TypeError:
+            __builtins__.print(*args, sep=sep, end=end)
+    dbg_print.last_end = "\n"
+
+    print = dbg_print
+else:
+    def dbg(f):
+        return f
+
 class ElseSignal(Exception):
 
     def __init__(self, v):
@@ -103,9 +142,11 @@ class ElseSignal(Exception):
     def __str__(self):
         return "else signal not caught ????"
 
+@dbg
 def parse(toks):
     return _tok2ast(toks.copy())
-    
+
+@dbg    
 def _tok2ast(t):
     exprs = []
     while len(t) > 0:
@@ -117,8 +158,13 @@ def _tok2ast(t):
             elif t[0].value == "else":
                 t.pop(0)
                 raise ElseSignal(Block(children=[NameSequence(children=[]), *exprs]))
+
+        elif isinstance(t[0], rlex.Operator):
+            if t[0].value == ")":
+                t.pop(0)
+                break
         
-        e = expr2ast(t)
+        e = expr2ast(t, exprs=exprs)
         
         if e is not None:
             exprs.append(e)
@@ -126,7 +172,8 @@ def _tok2ast(t):
     
     return Block(children=[NameSequence(children=[]), *exprs])
 
-def expr2ast(toks, ignore_sy_operator=False):
+@dbg
+def expr2ast(toks, ignore_sy_operator=False, exprs=None):
     if len(toks) == 0:
         return None
     
@@ -137,14 +184,14 @@ def expr2ast(toks, ignore_sy_operator=False):
         
         if isinstance(ntok, rlex.Operator):
             if ntok.value == "=":
-                return AssignGlobal(token=ntok, children=[Global(token=tok), expr2ast(toks)])
+                return AssignGlobal(token=ntok, children=[Global(token=tok), expr2ast(toks, exprs=exprs)])
 
             elif ntok.value == ".":
                 l = dot(tok, toks)
                 res = Global(token=tok)
                 for i in l[:0:-1]:
                     res = Call(children=[res, i])
-                res.children += exprseq2astseq(toks)
+                res.children += exprseq2astseq(toks, exprs=exprs)
                 return res
             
             else:
@@ -156,7 +203,7 @@ def expr2ast(toks, ignore_sy_operator=False):
 
     elif isinstance(tok, rlex.Keyword):
         if tok.value == "if":
-            cond = expr2ast(toks)
+            cond = expr2ast(toks, exprs=exprs)
             # print(toks[0])
             if (not isinstance(toks[0], rlex.Keyword)) or (not toks[0].value == "then"):
                 raise ValueError("Expected Keyword then, got %s %s" % (
@@ -175,7 +222,7 @@ def expr2ast(toks, ignore_sy_operator=False):
             return If(children=[cond, block])
 
         elif tok.value == "while":
-            cond = expr2ast(toks)
+            cond = expr2ast(toks, exprs=exprs)
             # print(toks[0])
             if (not isinstance(toks[0], rlex.Keyword)) or (not toks[0].value == "do"):
                 raise ValueError("Expected Keyword then, got %s %s" % (
@@ -195,34 +242,39 @@ def expr2ast(toks, ignore_sy_operator=False):
         return None
 
     elif isinstance(tok, rlex.Name):
-        # [name] [equal sign] [expr]
-        # [name] [operator] ...
-        # [name] [dot] [name] [[dot] [name] [[dot] [name] [...]]]
-        # [name] [expr] [, [expr] [, [expr] [...]]]
         ntok = toks.pop(0)
         if isinstance(ntok, rlex.Operator):
             if ntok.value == "=":
-                return Call(children=[None, Name(token=rlex.Name(value=tok.value + "=", line=tok.line, char=tok.char)), expr2ast(toks)])
+                return Call(children=[None, Name(token=rlex.Name(value=tok.value + "=", line=tok.line, char=tok.char)), expr2ast(toks, exprs=exprs)])
 
             elif ntok.value == ".":
                 l = dot(tok, toks)
-                res = Call(children=[None, Name(token=tok)])
+                if tok.value[0] in "QWERTYUIOPASDFGHJKLZXCVBNM":
+                    res = Constant(token=tok)
+                else:
+                    res = Call(children=[None, Name(token=tok)])
                 for i in l[:0:-1]:
                     res = Call(children=[res, i])
-                res.children += exprseq2astseq(toks)
+                res.children += exprseq2astseq(toks, exprs=exprs)
                 return res
             
             else:
                 toks.insert(0, ntok)
                 if ignore_sy_operator or ntok.value == ",":
-                    return Call(children=[None, Name(token=tok), *exprseq2astseq(toks)])
+                    if tok.value[0] in "QWERTYUIOPASDFGHJKLZXCVBNM":
+                        # Constant name
+                        return Constant(token=tok)
+                    return Call(children=[None, Name(token=tok), *exprseq2astseq(toks, exprs=exprs)])
                 else:
                     toks.insert(0, tok)
                     return shunting_yard(toks)
 
         else:
             toks.insert(0, ntok)
-            return Call(children=[None, Name(token=tok), *exprseq2astseq(toks)])
+            if tok.value[0] in "QWERTYUIOPASDFGHJKLZXCVBNM":
+                # Constant name
+                return Constant(token=tok)
+            return Call(children=[None, Name(token=tok), *exprseq2astseq(toks, exprs=exprs)])
 
     elif isinstance(tok, rlex.Literal):
         if len(toks) > 0:
@@ -235,12 +287,21 @@ def expr2ast(toks, ignore_sy_operator=False):
             
         return Literal(token=tok)
 
-    elif isinstance(tok, rlex.Operator) and tok.value == ")":
-        return None
-
     elif isinstance(tok, rlex.Operator) and tok.value == "(":
-        return expr2ast(toks)
-     
+        t = _tok2ast(toks)
+        if len(t.children) > 2:
+            raise ValueError("More than 1 expression in parenthesis")
+        if len(t.children) < 2:
+            raise ValueError("Empty parenthesis")
+        return t.children[1]
+
+    elif isinstance(tok, rlex.Operator):
+        p = exprs.pop()
+        toks.insert(0, tok)
+        s = shunting_yard(toks, [p])
+        # print("shunting_yard", s)
+        return s
+    
     raise NotImplementedError(type(tok).__name__)
 
 SY_PRECEDENCE = {
@@ -256,7 +317,8 @@ SY_PRECEDENCE = {
     "<=>": 2,
     "": float("-inf")
 }
-def shunting_yard(toks):
+@dbg
+def shunting_yard(toks, init=[]):
 
     # TODO: Add input validation
     # TODO: Don't lose line / char info on operators
@@ -275,8 +337,14 @@ def shunting_yard(toks):
         
         if isinstance(toks[0], rlex.Operator):
             if toks[0].value == ")":
-                toks.pop(0)
-                return vnext()
+                # toks.pop(0)
+                raise Break
+
+            if toks[0].value == "(":
+                e = expr2ast(toks)
+                if e is None:
+                    raise Break
+                return e
             
             if toks[0].value == ",":
                 raise Break
@@ -288,10 +356,14 @@ def shunting_yard(toks):
         return e
     
     stack = [""]
-    rlist = []
+    rlist = init.copy()
     try:
         while 1:
+            if AST_DEBUG:
+                print("Getting vnext")
             v = vnext()
+            if AST_DEBUG:
+                print("vnext is", v)
             if isinstance(v, str):
                 while SY_PRECEDENCE[v] <= SY_PRECEDENCE[stack[-1]]:
                     rlist.append(stack.pop())
@@ -314,6 +386,7 @@ def shunting_yard(toks):
     
     return stack[-1]
 
+@dbg
 def dot(tok, toks):
     l = [tok]
     ntok2l = [toks.pop(0)]
@@ -333,7 +406,8 @@ def dot(tok, toks):
             break
     return l
 
-def exprseq2astseq(toks):
+@dbg
+def exprseq2astseq(toks, exprs):
     if isinstance(toks[0], rlex.Separator):
         return []
 
@@ -368,7 +442,7 @@ def exprseq2astseq(toks):
         # print("a", r, toks[0])
 
         # print("b", toks)
-        e = expr2ast(toks)
+        e = expr2ast(toks, exprs=exprs)
         # print("c", toks)
         if e is not None:
             r.append(e)
