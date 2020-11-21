@@ -411,121 +411,91 @@ def ruby_exec(code, *, constants=None, rglobals=None, rlocals_init=None):
     exec(code, eglobals, locals)
     return eglobals, locals
 
-code = r"""
+rcode = """
 def bruh(a, b, c)
-  a + (b + c)
+    a + (b + c)
 end
 
 x = 10
 y = 20
-STDOUT.puts bruh 5, 10, 200
-STDOUT.puts x + y
+
+STDOUT.puts bruh(5, 10, 200)
+
+STDOUT.puts x + y * 10 - 6
 """
 
-"""
-ast = rast.Block(children=[
-    rast.NameSequence(children=[]),
-
-    rast.Define(children=[
-        rast.Name(token=rlex.Name(value="bruh", line=-1, char=-1)),
-        rast.Block(children=[
-            rast.NameSequence(children=[
-                rast.Name(token=rlex.Name(line=-1, char=-1, value="a")),
-                rast.Name(token=rlex.Name(line=-1, char=-1, value="b")),
-                rast.Name(token=rlex.Name(line=-1, char=-1, value="c"))
-            ]),
-            rast.Call(children=[
-                rast.Call(children=[None, rast.Name(token=rlex.Name(value="a", line=-1, char=-1))]),
-                rast.Name(token=rlex.Name(value="+", line=-1, char=-1)),
-                rast.Call(children=[
-                    rast.Call(children=[None, rast.Name(token=rlex.Name(value="b", line=-1, char=-1))]),
-                    rast.Name(token=rlex.Name(value="+", line=-1, char=-1)),
-                    rast.Call(children=[None, rast.Name(token=rlex.Name(value="c", line=-1, char=-1))])
-                ])
-            ])
-        ])
-    ]),
-    
-    rast.Call(children=[
-        None,
-        rast.Name(token=rlex.Name(value="x=", line=1, char=1)),
-        rast.Literal(token=rlex.Literal(value=10, line=1, char=6))
-    ]),
-    rast.Call(children=[
-        None,
-        rast.Name(token=rlex.Name(value="y=", line=2, char=1)),
-        rast.Literal(token=rlex.Literal(value=20, line=2, char=6))
-    ]),
-
-    rast.Call(children=[
-        rast.Constant(token=rlex.Name(value="STDOUT", line=3, char=1)),
-        rast.Name(token=rlex.Name(value="puts", line=3, char=8)),
-        rast.Call(children=[
-            None,
-            rast.Name(token=rlex.Name(value="bruh", line=3, char=25)),
-            rast.Literal(token=rlex.Literal(value=5, line=3, char=27)),
-            rast.Literal(token=rlex.Literal(value=10, line=3, char=27)),
-            rast.Literal(token=rlex.Literal(value=200, line=3, char=27))
-        ])
-    ]),
-    
-    rast.Call(children=[
-        rast.Constant(token=rlex.Name(value="STDOUT", line=3, char=1)),
-        rast.Name(token=rlex.Name(value="puts", line=3, char=8)),
-        rast.Call(children=[
-            rast.Call(children=[
-                rast.Call(children=[None, rast.Name(token=rlex.Name(value="x", line=3, char=14))]),
-                rast.Name(token=rlex.Name(value="+", line=3, char=17)),
-                rast.Call(children=[
-                    rast.Call(children=[None, rast.Name(token=rlex.Name(value="y", line=3, char=19))]),
-                    rast.Name(token=rlex.Name(value="*", line=3, char=21)),
-                    rast.Literal(token=rlex.Literal(value=10, line=3, char=23))
-                ])
-            ]),
-            rast.Name(token=rlex.Name(value="-", line=3, char=25)),
-            rast.Literal(token=rlex.Literal(value=6, line=3, char=27))
-        ])
-    ])
-])
-"""
-
-code = r"""
-puts 'Proper math order:', 1 + 2 - 3 * 4 * 5 + 6 - 7, '=', '-58'
-
-x = 0
-while x < 10 do
-    puts x
-    x = x + 1
-end
-print 'What\'s your name? '
-$stdout.flush
-name = gets
-
-if name == 'gwitr' then
-    puts 'nested'
-    if name == 'gwitr' then
-        puts 'if'
-        if name == 'gwitr' then
-            puts 'stmt'
-            if name == 'gwitr' then
-                puts 'test!'
-            end
-        end
-    end
-end
-
-if name != 'gwitr' then
-    puts 'it\'s not gwitr'
-else
-    puts 'it is gwitr'
-end
-"""
+# rcode = r"""
+# puts 'Proper math order:', 1 + 2 - 3 * 4 * 5 + 6 - 7, '=', '-58'
+# 
+# x = 0
+# while x < 10 do
+#     puts x
+#     x = x + 1
+# end
+# print 'What\'s your name? '
+# $stdout.flush
+# name = gets
+# 
+# if name == 'gwitr' then
+#     puts 'nested'
+#     if name == 'gwitr' then
+#         puts 'if'
+#         if name == 'gwitr' then
+#             puts 'stmt'
+#             if name == 'gwitr' then
+#                 puts 'test!'
+#             end
+#         end
+#     end
+# end
+# 
+# if name != 'gwitr' then
+#     puts 'it\'s not gwitr'
+# else
+#     puts 'it is gwitr'
+# end
+# """
 
 
 
 
+##rcode = """
+##def mul(a, b, c)
+##    a * b * c
+##end
+##
+##puts mul(mul(2, 3, 4), 5, 6)
+##puts mul(2, mul(3, 4, 5), 6)
+##puts mul(2, 3, mul(4, 5, 6))
+##
+##puts mul((mul 2, 3, 4), 5, 6)
+##puts mul(2, (mul 3, 4, 5), 6)
+##puts mul(2, 3, (mul 4, 5, 6))
+##
+##x = mul 2, (mul 3, 4, 5), 6
+##puts x
+##x = mul 2, 3, (mul 4, 5, 6)
+##puts x
+##
+##x = mul mul(2, 3, 4), 5, 6
+##puts x
+##x = mul 2, mul(3, 4, 5), 6
+##puts x
+##x = mul 2, 3, mul(4, 5, 6)
+##puts x
+##
+##x = 10
+##y = 20
+##
+##STDOUT.puts((x + y * 10) - 6)
+##
+##$stdout.puts((x + y * 10) - 6)
+##"""
 
-
+##rcode = """
+##puts mul((mul 2, 3, 4), 5, 6)
+##puts mul(7, (mul 8, 9, 10), 11)
+##"""
 
 
 
@@ -552,6 +522,12 @@ rglobals = {
     "stdin": STDIN
 }
 
+toks = rlex.lex(rcode)
+ast = rast.parse(toks)
+pcode = ruby_aspython(ast)
+bcode = compile(pcode, "<compiled ruby code>", "exec")
+ruby_exec(bcode, constants=consts, rlocals_init=rlocals, rglobals=rglobals)
+
 depth = 0
 fcode = ""
 while 1:
@@ -576,6 +552,7 @@ while 1:
             toks = rlex.lex(fcode)
             ast = rast.parse(toks)
             c = ruby_aspython(ast)
+            print(c)
             code = compile(c, "<compiled ruby code>", "exec")
             
             env = ruby_exec(code, constants=consts, rlocals_init=rlocals, rglobals=rglobals)
