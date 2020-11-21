@@ -234,6 +234,38 @@ def expr2ast(toks, ignore_sy_operator=False, exprs=None):
             except ElseSignal as e:
                 raise ValueError("While block cannot have an else block") from None
             return While(children=[cond, block])
+
+        elif tok.value == "def":
+            ntok = toks.pop(0)
+            if not isinstance(ntok, rlex.Name):
+                raise ValueError("Expected Name, got %s %s" % (type(ntok).__name__, ntok.value))
+
+            try:
+                ntok2 = toks.pop(0)
+            except IndexError:
+                raise ValueError("Expected Operator ( or Separator, not EOF") from None
+            
+            if isinstance(ntok2, rlex.Operator) and ntok2.value == "(":
+                argnames = exprseq2astseq(toks, exprs=exprs)
+
+            elif isinstance(ntok2, rlex.Separator):
+                argnames = []
+            
+            else:
+                raise ValueError("Expected Operator ( or Separator, not %s %s" % (type(ntok2).__name__, ntok2.value))
+            
+            for i in argnames:
+                if not isinstance(i, Call):
+                    raise ValueError("Argument name list must only contain Name tokens")
+                if i.children[0] is not None:
+                    raise ValueError("Argument name list must only contain Name tokens")
+                if len(i.children) != 2:
+                    raise ValueError("Argument name list must only contain Name tokens")
+                if not isinstance(i.children[1], Name):
+                    raise ValueError("Argument name list must only contain Name tokens")
+            
+            args = NameSequence(children=[i.children[1] for i in argnames])
+            return Define(children=[Name(token=ntok), Block(children=[args] + _tok2ast(toks).children[1:])])
         
         else:
             raise NotImplementedError("Keyword %s" % tok.value)
@@ -242,9 +274,18 @@ def expr2ast(toks, ignore_sy_operator=False, exprs=None):
         return None
 
     elif isinstance(tok, rlex.Name):
-        ntok = toks.pop(0)
+        try:
+            ntok = toks.pop(0)
+        except IndexError:
+            if tok.value[0] in "QWERTYUIOPASDFGHJKLZXCVBNM":
+                # Constant name
+                return Constant(token=tok)
+            return Call(children=[None, Name(token=tok)])
+        
         if isinstance(ntok, rlex.Operator):
             if ntok.value == "=":
+                if tok.value[0] in "QWERTYUIOPASDFGHJKLZXCVBNM":
+                    return Call(children=[None, Constant(token=rlex.Name(value=tok.value + "=", line=tok.line, char=tok.char)), expr2ast(toks, exprs=exprs)])
                 return Call(children=[None, Name(token=rlex.Name(value=tok.value + "=", line=tok.line, char=tok.char)), expr2ast(toks, exprs=exprs)])
 
             elif ntok.value == ".":
@@ -260,7 +301,7 @@ def expr2ast(toks, ignore_sy_operator=False, exprs=None):
             
             else:
                 toks.insert(0, ntok)
-                if ignore_sy_operator or ntok.value == ",":
+                if ignore_sy_operator or ntok.value in {",", "(", ")"}:
                     if tok.value[0] in "QWERTYUIOPASDFGHJKLZXCVBNM":
                         # Constant name
                         return Constant(token=tok)
@@ -279,7 +320,7 @@ def expr2ast(toks, ignore_sy_operator=False, exprs=None):
     elif isinstance(tok, rlex.Literal):
         if len(toks) > 0:
             if isinstance(toks[0], rlex.Operator):
-                if ignore_sy_operator or toks[0].value == ",":
+                if ignore_sy_operator or toks[0].value in {",", "(", ")"}:
                     return Literal(token=tok)
                 else:
                     toks.insert(0, tok)
@@ -287,13 +328,16 @@ def expr2ast(toks, ignore_sy_operator=False, exprs=None):
             
         return Literal(token=tok)
 
+    elif isinstance(tok, rlex.Operator) and tok.value == ",":
+        raise ValueError("Operator , is invalid here.")
+
     elif isinstance(tok, rlex.Operator) and tok.value == "(":
-        t = _tok2ast(toks)
-        if len(t.children) > 2:
+        t = exprseq2astseq(toks, exprs=exprs)
+        if len(t) > 1:
             raise ValueError("More than 1 expression in parenthesis")
-        if len(t.children) < 2:
+        if len(t) < 1:
             raise ValueError("Empty parenthesis")
-        return t.children[1]
+        return t[0]
 
     elif isinstance(tok, rlex.Operator):
         p = exprs.pop()
@@ -337,7 +381,7 @@ def shunting_yard(toks, init=[]):
         
         if isinstance(toks[0], rlex.Operator):
             if toks[0].value == ")":
-                # toks.pop(0)
+                toks.pop(0)
                 raise Break
 
             if toks[0].value == "(":
@@ -370,6 +414,7 @@ def shunting_yard(toks, init=[]):
                 stack.append(v)
             else:
                 rlist.append(v)
+    
     except Break:
         pass
     rlist += stack[1:]
@@ -408,16 +453,20 @@ def dot(tok, toks):
 
 @dbg
 def exprseq2astseq(toks, exprs):
+    if isinstance(toks[0], rlex.Operator) and toks[0].value == "(":
+        toks.pop(0)
+        # return exprseq2astseq(toks, exprs)
     if isinstance(toks[0], rlex.Separator):
         return []
 
     if isinstance(toks[0], rlex.Keyword):
         return []
     
-    if isinstance(toks[0], rlex.Operator):
+    if isinstance(toks[0], rlex.Operator) and toks[0].value != "(":
         return []
     
     r = [expr2ast(toks)]
+    
     while len(toks) > 0:
         # print(r, toks[0])
         if isinstance(toks[0], rlex.Separator):
@@ -425,10 +474,23 @@ def exprseq2astseq(toks, exprs):
 
         if isinstance(toks[0], rlex.Keyword):
             break
+
+        if isinstance(toks[0], rlex.Operator) and toks[0].value == ")":
+            toks.pop(0)
+            break
+
+        if isinstance(toks[0], rlex.Operator) and toks[0].value == "(":
+            toks.pop(0)
+            r += exprseq2astseq(toks, exprs)
         
         if not (isinstance(toks[0], rlex.Operator) and toks[0].value == ","):
             break
+        
         toks.pop(0)
+
+        if isinstance(toks[0], rlex.Operator) and toks[0].value == "(":
+            toks.pop(0)
+            r += exprseq2astseq(toks, exprs)
 
         f = False
         while isinstance(toks[0], rlex.Separator):

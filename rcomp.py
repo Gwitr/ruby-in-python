@@ -86,9 +86,17 @@ class Constants():
             self.v = {}
 
     def __getitem__(self, x):
-        if x not in self.v:
-            raise RubyErrors.NameError("Uninitialized constant %s" % x)
-        return self.v[x]
+        def _wrap(y):
+            nonlocal x, self
+            self[x[:-1]] = y
+        
+        if x.endswith("="):
+            return _wrap
+        
+        if x in self.v:
+            return self.v[x]
+        
+        raise RubyErrors.NameError("Uninitialized constant %s" % x)
 
     def __setitem__(self, x, y):
         if x in self.v:
@@ -194,6 +202,40 @@ class String(Object):
     def __str__(self):
         return self.s
 
+class Float(Object):
+
+    def initialize(self, *args):
+        try:
+            self.float = float(args[0])
+        except TypeError:
+            self.float = float(int(args[0]))
+        
+        self.methods["+"] = lambda other: Float(self.float + Float(other).float)
+        self.methods["-"] = lambda other: Float(self.float - Float(other).float)
+        self.methods["*"] = lambda other: Float(self.float * Float(other).float)
+        self.methods["/"] = lambda other: Float(self.float / Float(other).float)
+
+        self.methods["=="] = lambda other: self.float == other.float
+        self.methods["!="] = lambda other: self.float != other.float
+        self.methods[">"]  = lambda other: self.float > other.float
+        self.methods["<"]  = lambda other: self.float < other.float
+        self.methods[">="] = lambda other: self.float >= other.float
+        self.methods["<="] = lambda other: self.float <= other.float
+        
+        self.__name__ = "Float"
+
+    def to_s(self):
+        return String(self.float)
+
+    def __int__(self):
+        return int(self.float)
+    
+    def __float__(self):
+        return self.float
+
+    def __str__(self):
+        return str(self.float)
+
 class File(Object):
 
     def initialize(self, *args):
@@ -276,6 +318,15 @@ def ruby_compile_as_statement(ast):
             ruby_compile_as_rvalue(ast.children[0]),
             ruby_aspython(ast.children[1]).replace("\n", "\n  ")
         )
+
+    elif isinstance(ast, rast.Name):
+        return "result = rlocals[%r]" % ast.token.value
+
+    elif isinstance(ast, rast.Constant):
+        return "result = rconsts[%r]" % ast.token.value
+
+    elif isinstance(ast, rast.Global):
+        return "result = rglobals[%r]" % ast.token.value
     
     else:
         raise NotImplementedError(type(ast).__name__)
@@ -294,6 +345,7 @@ def ruby_compile_as_lvalue(ast):
         raise NotImplementedError(type(ast).__name__)
 
 def ruby_compile_as_rvalue(ast):
+    # print("rvalue", ast)
     if isinstance(ast, rast.Literal):
         return "LITERAL_TYPE_MAP[%r](%r)" % (type(ast.token.value).__name__, ast.token.value)
 
@@ -311,6 +363,8 @@ def ruby_compile_as_rvalue(ast):
         args = [ruby_compile_as_rvalue(i) for i in ast.children[2:]]
         args_repr = ", ".join("%s" % i for i in args)
         if ast.children[0] is None:
+            if isinstance(ast.children[1], rast.Constant):
+                return "rconsts[%r](%s)" % (method_name, args_repr)
             return "rlocals[%r](%s)" % (method_name, args_repr)
         
         else:
@@ -348,7 +402,8 @@ def ruby_exec(code, *, constants=None, rglobals=None, rlocals_init=None):
         "__builtins__": {},
         "LITERAL_TYPE_MAP": {
             "int": Integer,
-            "str": String
+            "str": String,
+            "float": Float
         }
     }
     eglobals["rlocals"].update(rlocals_init)
@@ -474,38 +529,78 @@ end
 
 
 
-toks = rlex.lex(code)
-ast = rast.parse(toks)
-code = ruby_aspython(ast)
-print(code)
-code = compile(code, "<compiled ruby code>", "exec")
+# toks = rlex.lex(code)
+# ast = rast.parse(toks)
+# code = ruby_aspython(ast)
+# print(code)
+# code = compile(code, "<compiled ruby code>", "exec")
 
-try:
-    STDIN  = File(sys.stdin)
-    STDOUT = File(sys.stdout)
-    env = ruby_exec(code, constants={
-        "STDIN":  STDIN,
-        "STDOUT": STDOUT
-    }, rlocals_init={
-        "puts": STDOUT.methods["puts"],
-        "gets": STDIN.methods["gets"],
-        "print": STDOUT.methods["print"]
-    }, rglobals={
-        "stdout": STDOUT,
-        "stdin": STDIN
-    })
+STDIN  = File(sys.stdin)
+STDOUT = File(sys.stdout)
 
-except RubyErrors.StandardError as e:
-    _, _, tb = sys.exc_info()
-    stack = traceback.extract_tb(tb)
-    i = 0
-    while i < len(stack):
-        if stack[i].filename.endswith(".py"):
-            # i += 1
-            stack.pop(i)
+consts = {
+    "STDIN":  STDIN,
+    "STDOUT": STDOUT
+}
+rlocals = {
+    "puts": STDOUT.methods["puts"],
+    "gets": STDIN.methods["gets"],
+    "print": STDOUT.methods["print"]
+}
+rglobals = {
+    "stdout": STDOUT,
+    "stdin": STDIN
+}
+
+depth = 0
+fcode = ""
+while 1:
+    try:
+        if depth > 0:
+            line = input("... ")
         else:
-            i += 1
-    print("%s:in `%s': %s (%s)" % (stack[-1].filename, stack[-1].name, str(e), type(e).__name__), file=sys.stderr)
-    for s in stack[::-1]:
-        print("        from %s:in `%s'" % (s.filename, s.name), file=sys.stderr)
-    del tb, stack
+            line = input(">>> ")
+        fcode += line + "\n"
+        toks = rlex.lex(line)
+        for i in toks:
+            if isinstance(i, rlex.Keyword) and i.value == "then":
+                depth += 1
+            elif isinstance(i, rlex.Keyword) and i.value == "do":
+                depth += 1
+            elif isinstance(i, rlex.Keyword) and i.value == "def":
+                depth += 1
+            elif isinstance(i, rlex.Keyword) and i.value == "end":
+                depth -= 1
+        
+        if depth == 0:
+            toks = rlex.lex(fcode)
+            ast = rast.parse(toks)
+            c = ruby_aspython(ast)
+            code = compile(c, "<compiled ruby code>", "exec")
+            
+            env = ruby_exec(code, constants=consts, rlocals_init=rlocals, rglobals=rglobals)
+            if env[1]["result"] is not None:
+                print(env[1]["result"])
+            
+            consts.update(env[0]["rconsts"].v)
+            rglobals.update(env[0]["rglobals"].v)
+            rlocals.update(env[0]["rlocals"].stack[-1])
+            
+            fcode = ""
+
+    except RubyErrors.StandardError as e:
+        fcode = ""
+        
+        _, _, tb = sys.exc_info()
+        stack = traceback.extract_tb(tb)
+        i = 0
+        while i < len(stack):
+            if stack[i].filename.endswith(".py"):
+                # i += 1
+                stack.pop(i)
+            else:
+                i += 1
+        print("%s:in `%s': %s (%s)" % (stack[-1].filename, stack[-1].name, str(e), type(e).__name__), file=sys.stderr)
+        for s in stack[::-1]:
+            print("        from %s:in `%s'" % (s.filename, s.name), file=sys.stderr)
+        del tb, stack

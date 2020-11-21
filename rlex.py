@@ -145,7 +145,7 @@ def lex(code):
         char += i - li
         li = i
 
-    return toks
+    return toks + [Separator(line=line + 1, char=0)]
 
 if __name__ == "__main__":
     code = r"""
